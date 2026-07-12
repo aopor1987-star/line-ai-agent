@@ -10,7 +10,7 @@ const { buildSystemPrompt } = require("./systemPrompt");
 const {
   LINE_CHANNEL_ACCESS_TOKEN,
   LINE_CHANNEL_SECRET,
-  GEMINI_API_KEY,
+  GROQ_API_KEY,
   OWNER_LINE_USER_ID,
   BUSINESS_NAME,
   WEBSITE_URL,
@@ -21,7 +21,7 @@ const {
 const required = {
   LINE_CHANNEL_ACCESS_TOKEN,
   LINE_CHANNEL_SECRET,
-  GEMINI_API_KEY,
+  GROQ_API_KEY,
 };
 for (const [key, value] of Object.entries(required)) {
   if (!value) {
@@ -38,7 +38,7 @@ const app = express();
 
 // เก็บประวัติคุยล่าสุดของแต่ละคนไว้ในหน่วยความจำ (ง่ายสุดสำหรับเริ่มต้น ไม่ต้องมีฐานข้อมูล)
 // หมายเหตุ: ถ้า server รีสตาร์ท (เช่น Render free tier sleep แล้วตื่น) ประวัติจะรีเซ็ต ซึ่งรับได้สำหรับบอทให้คำแนะนำทั่วไป
-const conversationHistory = new Map(); // userId -> [{role, parts}]
+const conversationHistory = new Map(); // userId -> [{role, content}]  (รูปแบบ OpenAI-compatible ของ Groq)
 const MAX_TURNS = 8; // เก็บย้อนหลังกี่รอบสนทนา กันไม่ให้ prompt ยาวเกิน (ประหยัด token)
 
 const SYSTEM_PROMPT = buildSystemPrompt({
@@ -46,7 +46,12 @@ const SYSTEM_PROMPT = buildSystemPrompt({
   websiteUrl: WEBSITE_URL || "",
 });
 
-// ดาวน์โหลดไฟล์ภาพที่ลูกค้าส่งเข้ามาทาง LINE แล้วแปลงเป็น base64 เพื่อส่งให้ Gemini วิเคราะห์
+// โมเดลของ Groq (ฟรี ไม่ต้องผูกบัตร) — ตัวข้อความล้วนใช้ตัวเร็ว/ฉลาด ตัวรูปภาพต้องใช้รุ่นที่รองรับ vision โดยเฉพาะ
+const GROQ_TEXT_MODEL = "openai/gpt-oss-120b";
+const GROQ_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
+const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+
+// ดาวน์โหลดไฟล์ภาพที่ลูกค้าส่งเข้ามาทาง LINE แล้วแปลงเป็น base64 เพื่อส่งให้โมเดล vision วิเคราะห์
 // (ใช้แค่ชั่วคราวสำหรับวิเคราะห์ภาพ 1 ครั้ง ไม่ได้เก็บไฟล์ไว้ในเซิร์ฟเวอร์ — ภาพต้นฉบับจริงๆ
 // เจ้าของร้านดูและดาวน์โหลดได้เองจากแอป LINE Official Account Manager)
 async function downloadLineImageAsBase64(messageId) {
@@ -62,29 +67,33 @@ async function downloadLineImageAsBase64(messageId) {
   return { base64, mimeType };
 }
 
-// เรียก Gemini ด้วย "ชิ้นส่วนเนื้อหา" (parts) ของรอบสนทนานี้ — ใช้ได้ทั้งข้อความล้วนและข้อความ+รูปภาพ
-// historyLabel คือข้อความสั้นๆ ที่จะถูกบันทึกแทนของจริงในประวัติแชท (กันไม่ให้ส่งรูปซ้ำทุกรอบถัดไป ประหยัด quota)
-async function callGeminiWithParts(userId, currentParts, historyLabel) {
+// เรียก Groq (รูปแบบเดียวกับ OpenAI Chat Completions API) — currentContent เป็นได้ทั้ง string ล้วน
+// หรือ array แบบ [{type:"text",...},{type:"image_url",...}] สำหรับข้อความที่แนบรูป
+// historyLabel คือข้อความสั้นๆ ที่จะถูกบันทึกแทนของจริงในประวัติแชท (กันไม่ให้ส่งรูป base64 ซ้ำทุกรอบถัดไป ประหยัด token)
+async function callGroq(userId, currentContent, { historyLabel, model = GROQ_TEXT_MODEL } = {}) {
   const history = conversationHistory.get(userId) || [];
-  history.push({ role: "user", parts: currentParts });
+  history.push({ role: "user", content: currentContent });
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
   const body = {
-    system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-    contents: history,
-    generationConfig: { temperature: 0.6, maxOutputTokens: 500 },
+    model,
+    messages: [{ role: "system", content: SYSTEM_PROMPT }, ...history],
+    temperature: 0.6,
+    max_tokens: 600,
   };
 
-  const res = await fetch(url, {
+  const res = await fetch(GROQ_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${GROQ_API_KEY}`,
+    },
     body: JSON.stringify(body),
   });
 
   if (!res.ok) {
     const errText = await res.text();
-    console.error("Gemini API error:", res.status, errText);
-    // ถ้าพลาด ให้เอาข้อความ (parts) ที่เพิ่ง push ออกจาก history เพื่อไม่ให้ค้าง
+    console.error("Groq API error:", res.status, errText);
+    // ถ้าพลาด ให้เอาข้อความที่เพิ่ง push ออกจาก history เพื่อไม่ให้ค้าง
     history.pop();
     conversationHistory.set(userId, history);
     return "ขออภัยค่ะ ตอนนี้ระบบขัดข้องชั่วคราว รบกวนลองใหม่อีกครั้ง หรือทักตรงมาที่เจ้าของเพจได้เลยค่ะ";
@@ -92,24 +101,20 @@ async function callGeminiWithParts(userId, currentParts, historyLabel) {
 
   const data = await res.json();
   const reply =
-    data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ||
+    data?.choices?.[0]?.message?.content?.trim() ||
     "ขออภัยค่ะ ยังไม่เข้าใจคำถาม รบกวนลองพิมพ์อีกครั้งได้ไหมคะ";
 
-  // แทนที่ parts จริงในประวัติด้วยข้อความสั้นๆ (historyLabel) เพื่อไม่ให้ base64 รูปภาพค้างอยู่ใน context ทุกรอบ
+  // แทนที่ content จริงในประวัติด้วยข้อความสั้นๆ (historyLabel) เพื่อไม่ให้ base64 รูปภาพค้างอยู่ใน context ทุกรอบ
   if (historyLabel) {
-    history[history.length - 1] = { role: "user", parts: [{ text: historyLabel }] };
+    history[history.length - 1] = { role: "user", content: historyLabel };
   }
-  history.push({ role: "model", parts: [{ text: reply }] });
+  history.push({ role: "assistant", content: reply });
 
-  // ตัดประวัติให้ไม่เกิน MAX_TURNS รอบ (1 รอบ = user+model = 2 ข้อความ)
+  // ตัดประวัติให้ไม่เกิน MAX_TURNS รอบ (1 รอบ = user+assistant = 2 ข้อความ)
   const trimmed = history.slice(-MAX_TURNS * 2);
   conversationHistory.set(userId, trimmed);
 
   return reply;
-}
-
-function callGemini(userId, userMessage) {
-  return callGeminiWithParts(userId, [{ text: userMessage }], null);
 }
 
 // แยกบรรทัด LEAD_DATA ออกจากคำตอบก่อนส่งให้ลูกค้า และแจ้งเตือนเจ้าของถ้ามี lead
@@ -157,7 +162,7 @@ async function handleEvent(event) {
   const userId = event.source.userId;
 
   if (event.message.type === "text") {
-    const rawReply = await callGemini(userId, event.message.text);
+    const rawReply = await callGroq(userId, event.message.text);
     const cleanReply = extractLeadAndClean(rawReply, userId);
     return client.replyMessage(event.replyToken, { type: "text", text: cleanReply });
   }
@@ -166,15 +171,19 @@ async function handleEvent(event) {
     let rawReply;
     try {
       const { base64, mimeType } = await downloadLineImageAsBase64(event.message.id);
-      const parts = [
+      const content = [
         {
+          type: "text",
           text:
             "ลูกค้าส่งรูปภาพนี้เข้ามาเพื่อขอใช้บริการแต่งภาพจาก Preset ของเรา " +
             "ช่วยชมภาพสั้นๆ แล้วแนะนำสไตล์ preset ที่เหมาะกับภาพนี้ตามหัวข้อ 'บริการแต่งภาพจาก Preset' ในคำสั่งระบบ",
         },
-        { inlineData: { mimeType, data: base64 } },
+        { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } },
       ];
-      rawReply = await callGeminiWithParts(userId, parts, "[ลูกค้าส่งรูปภาพเข้ามา 1 ภาพ เพื่อขอใช้บริการแต่งภาพ]");
+      rawReply = await callGroq(userId, content, {
+        historyLabel: "[ลูกค้าส่งรูปภาพเข้ามา 1 ภาพ เพื่อขอใช้บริการแต่งภาพ]",
+        model: GROQ_VISION_MODEL,
+      });
     } catch (e) {
       console.error("ประมวลผลรูปภาพไม่สำเร็จ:", e);
       rawReply =
