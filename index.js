@@ -6,6 +6,8 @@ require("dotenv").config();
 const express = require("express");
 const line = require("@line/bot-sdk");
 const { buildSystemPrompt } = require("./systemPrompt");
+const { handleCommand, fmtDate } = require("./commands");
+const sheety = require("./lib/sheety");
 
 const {
   LINE_CHANNEL_ACCESS_TOKEN,
@@ -15,6 +17,8 @@ const {
   BUSINESS_NAME,
   WEBSITE_URL,
   PORT,
+  SHEETY_API_URL,
+  CRON_SECRET,
 } = process.env;
 
 // ตรวจสอบว่ากรอก .env ครบหรือยัง (เตือนตั้งแต่ตอน start ไม่ใช่ตอนมีคนทักมา)
@@ -151,6 +155,23 @@ function extractLeadAndClean(replyText, userId) {
     client
       .pushMessage(OWNER_LINE_USER_ID, { type: "text", text: notifyText })
       .catch((e) => console.error("แจ้งเตือนเจ้าของไม่สำเร็จ:", e));
+
+    // บันทึกลงชีต Leads ด้วย (ถ้าตั้งค่า Sheety ไว้แล้ว) กันข้อมูลหายตอน server รีสตาร์ท
+    if (SHEETY_API_URL) {
+      sheety
+        .addRow("leads", {
+          name: lead.name || "-",
+          contact: lead.contact || "-",
+          jobtype: lead.jobType || "-",
+          date: lead.date || "-",
+          budget: lead.budget || "-",
+          photocount: lead.photoCount || "-",
+          style: lead.style || "-",
+          status: "new",
+          lineuserid: userId,
+        })
+        .catch((e) => console.error("บันทึก Lead ลงชีตไม่สำเร็จ:", e));
+    }
   }
 
   return cleanText;
@@ -162,6 +183,18 @@ async function handleEvent(event) {
   const userId = event.source.userId;
 
   if (event.message.type === "text") {
+    // เช็คคำสั่งพิเศษก่อน (จด/เตือน/จ่าย/รับ/สรุปเดือนนี้) ถ้าตรง ให้ตอบทันทีโดยไม่ต้องเรียก Groq
+    if (SHEETY_API_URL) {
+      try {
+        const commandResult = await handleCommand(userId, event.message.text);
+        if (commandResult.handled) {
+          return client.replyMessage(event.replyToken, { type: "text", text: commandResult.reply });
+        }
+      } catch (e) {
+        console.error("ประมวลผลคำสั่งพิเศษไม่สำเร็จ (จะข้ามไปคุยแบบปกติแทน):", e);
+      }
+    }
+
     const rawReply = await callGroq(userId, event.message.text);
     const cleanReply = extractLeadAndClean(rawReply, userId);
     return client.replyMessage(event.replyToken, { type: "text", text: cleanReply });
@@ -207,6 +240,110 @@ app.post("/webhook", line.middleware(lineConfig), (req, res) => {
       console.error(err);
       res.status(500).end();
     });
+});
+
+// ป้องกัน endpoint ที่ให้บริการภายนอกเรียก (cron-job.org / Shortcuts) ด้วยรหัสลับ
+// ใส่ ?key=xxxx ต่อท้าย URL ให้ตรงกับค่า CRON_SECRET ใน .env ไม่งั้นจะถูกปฏิเสธ
+function checkSecret(req, res) {
+  if (!CRON_SECRET) {
+    res.status(500).send("ยังไม่ได้ตั้งค่า CRON_SECRET ใน .env");
+    return false;
+  }
+  if (req.query.key !== CRON_SECRET) {
+    res.status(403).send("รหัสไม่ถูกต้อง");
+    return false;
+  }
+  return true;
+}
+
+// เรียกวันละครั้งโดย cron-job.org (ฟรี) เช่น ทุกเช้า 7 โมง
+// ทำ 2 อย่าง: 1) เช็คเตือนความจำที่ครบกำหนดวันนี้ แล้วส่งแจ้งเตือนเข้า LINE เจ้าของร้าน
+//            2) ถ้าเป็นวันที่ 1 ของเดือน สรุปการเงินเดือนก่อนหน้าส่งให้ด้วย
+app.get("/cron/daily", async (req, res) => {
+  if (!checkSecret(req, res)) return;
+  if (!SHEETY_API_URL || !OWNER_LINE_USER_ID) {
+    return res.status(200).send("ข้ามการทำงาน: ยังไม่ได้ตั้งค่า SHEETY_API_URL หรือ OWNER_LINE_USER_ID");
+  }
+
+  const messages = [];
+  const today = fmtDate(new Date());
+
+  try {
+    const reminders = await sheety.getRows("reminders");
+    const dueToday = reminders.filter((r) => r.duedate === today && !r.notified);
+    for (const r of dueToday) {
+      messages.push(`⏰ เตือนความจำวันนี้: ${r.task}`);
+      try {
+        await sheety.updateRow("reminders", r.id, { notified: true });
+      } catch (e) {
+        console.error("อัปเดตสถานะเตือนความจำไม่สำเร็จ:", e);
+      }
+    }
+  } catch (e) {
+    console.error("ดึงเตือนความจำไม่สำเร็จ:", e);
+  }
+
+  // สรุปการเงินเดือนก่อนหน้า (ทำเฉพาะวันที่ 1 ของเดือน)
+  const now = new Date();
+  if (now.getDate() === 1) {
+    try {
+      const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const prevMonthKey = fmtDate(prevMonthDate).slice(0, 7);
+      const rows = await sheety.getRows("financelogs");
+      const monthRows = rows.filter((r) => (r.date || "").startsWith(prevMonthKey));
+      const income = monthRows
+        .filter((r) => r.type === "income")
+        .reduce((s, r) => s + Number(r.amount || 0), 0);
+      const expense = monthRows
+        .filter((r) => r.type === "expense")
+        .reduce((s, r) => s + Number(r.amount || 0), 0);
+      messages.push(
+        `📊 สรุปการเงินเดือน ${prevMonthKey}\nรายรับ: ${income.toLocaleString()} บาท\nรายจ่าย: ${expense.toLocaleString()} บาท\nคงเหลือ: ${(income - expense).toLocaleString()} บาท`
+      );
+    } catch (e) {
+      console.error("สรุปการเงินรายเดือนไม่สำเร็จ:", e);
+    }
+  }
+
+  if (messages.length > 0) {
+    try {
+      await client.pushMessage(OWNER_LINE_USER_ID, { type: "text", text: messages.join("\n\n") });
+    } catch (e) {
+      console.error("ส่งข้อความสรุปประจำวันไม่สำเร็จ:", e);
+    }
+  }
+
+  res.json({ ok: true, sentCount: messages.length });
+});
+
+// Apple Shortcuts บนไอโฟนจะเรียก endpoint นี้เพื่อดึงโน้ตที่ยังไม่ถูกซิงก์เข้า Apple Notes
+app.get("/notes/pending", async (req, res) => {
+  if (!checkSecret(req, res)) return;
+  if (!SHEETY_API_URL) return res.status(200).json({ notes: [] });
+  try {
+    const rows = await sheety.getRows("notes");
+    const pending = rows.filter((r) => !r.sent).map((r) => ({ id: r.id, content: r.content, createdAt: r.createdat }));
+    res.json({ notes: pending });
+  } catch (e) {
+    console.error("ดึงโน้ตค้างส่งไม่สำเร็จ:", e);
+    res.status(500).json({ notes: [], error: String(e) });
+  }
+});
+
+// Apple Shortcuts เรียก endpoint นี้หลัง Append to Note สำเร็จ เพื่อแจ้งว่าโน้ตไหนซิงก์แล้วบ้าง
+// body: { "ids": [1,2,3] }
+app.post("/notes/mark-sent", express.json(), async (req, res) => {
+  if (!checkSecret(req, res)) return;
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  try {
+    for (const id of ids) {
+      await sheety.updateRow("notes", id, { sent: true });
+    }
+    res.json({ ok: true, updated: ids.length });
+  } catch (e) {
+    console.error("อัปเดตสถานะโน้ตไม่สำเร็จ:", e);
+    res.status(500).json({ ok: false, error: String(e) });
+  }
 });
 
 const port = PORT || 3000;
