@@ -15,6 +15,8 @@ function buildLinksReply() {
     "🌐 เว็บสาธารณะ (แชร์ได้)",
     "• พอร์ตโฟลิโอช่างภาพ ISAD Studio",
     "  https://isad-studio-photography.netlify.app",
+    "• ไกด์ถ่ายภาพท่องเที่ยว (ไทยรายฤดู + ทริปมีนาคม)",
+    "  https://isad-studio-photography.netlify.app/travel-guide",
     "• เว็บ Story ส่วนตัว Mr. Kriangsak",
     "  https://mr-kriangsak-story.netlify.app",
     "• พอร์ตผลงาน Solar PPA (ไม่มีชื่อลูกค้า)",
