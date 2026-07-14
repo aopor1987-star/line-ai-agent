@@ -5,6 +5,39 @@
 
 const sheety = require("./lib/sheety");
 
+const OWNER_LINE_USER_ID = process.env.OWNER_LINE_USER_ID;
+
+// รายการลิงก์ที่ใช้งานอยู่ทั้งหมด — แก้ตรงนี้ที่เดียวเวลามีเว็บ/ระบบใหม่เพิ่มเข้ามา
+function buildLinksReply() {
+  return [
+    "📎 ลิงก์ที่ใช้งานอยู่ทั้งหมด",
+    "",
+    "🌐 เว็บสาธารณะ (แชร์ได้)",
+    "• พอร์ตโฟลิโอช่างภาพ ISAD Studio",
+    "  https://isad-studio-photography.netlify.app",
+    "• เว็บ Story ส่วนตัว Mr. Kriangsak",
+    "  https://mr-kriangsak-story.netlify.app",
+    "• พอร์ตผลงาน Solar PPA (ไม่มีชื่อลูกค้า)",
+    "  https://kriangsak-solar-portfolio.netlify.app",
+    "",
+    "🔒 เว็บภายใน (ข้อมูลลับ มีรหัสผ่าน)",
+    "• Solar PPA Control Dashboard",
+    "  https://kriangsak-solar-ppa-dashboard.netlify.app",
+    "  รหัส: GYSolar2026!",
+    "• Project Control Dashboard (Construction)",
+    "  https://kriangsak-pm-control.netlify.app",
+    "  รหัส: KriangsakPM2026!",
+    "",
+    "⚙️ ระบบเบื้องหลัง",
+    "• Google Sheet ฐานข้อมูล",
+    "  https://docs.google.com/spreadsheets/d/1A-PjngM58U8i-qd5fWaYTGvsOvYwDj0MrdK7I7ngh8M",
+    "• Bot backend (Render)",
+    "  https://line-ai-agent-9m4s.onrender.com",
+    "",
+    "พิมพ์ 'ลิงก์' เมื่อไหร่ก็ได้เพื่อดูรายการนี้อีกครั้งค่ะ",
+  ].join("\n");
+}
+
 function fmtDate(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -66,6 +99,14 @@ function parseAmount(text) {
 
 async function handleCommand(userId, text) {
   const trimmed = (text || "").trim();
+
+  // ---------- ลิงก์ / dashboard (เฉพาะเจ้าของบอทเท่านั้น กันคนอื่นที่ทักเข้ามาเห็นรหัสผ่านเว็บลับ) ----------
+  if (/^(ลิงก์|ลิ้งค์|ลิ้ง|link|dashboard)/i.test(trimmed)) {
+    if (!OWNER_LINE_USER_ID || userId !== OWNER_LINE_USER_ID) {
+      return { handled: false }; // ไม่ใช่เจ้าของ -> ปล่อยให้ไปคุยกับ Groq ตามปกติ ไม่บอกใบ้ว่ามีคำสั่งนี้อยู่
+    }
+    return { handled: true, reply: buildLinksReply() };
+  }
 
   // ---------- จดโน้ต ----------
   if (/^(จด|โน้ต|บันทึกโน้ต)/.test(trimmed)) {
