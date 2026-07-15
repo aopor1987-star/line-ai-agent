@@ -51,8 +51,11 @@ const SYSTEM_PROMPT = buildSystemPrompt({
 });
 
 // โมเดลของ Groq (ฟรี ไม่ต้องผูกบัตร) — ตัวข้อความล้วนใช้ตัวเร็ว/ฉลาด ตัวรูปภาพต้องใช้รุ่นที่รองรับ vision โดยเฉพาะ
+// หมายเหตุ (15 ก.ค. 69): เดิมตัว vision ใช้ meta-llama/llama-4-scout-17b-16e-instruct แต่ Groq ประกาศ
+// เลิกใช้รุ่นนี้ตั้งแต่ 17 ก.ค. 69 (ดู https://console.groq.com/docs/deprecations) จึงเปลี่ยนมาใช้
+// qwen/qwen3.6-27b ซึ่งเป็นรุ่น vision ที่ Groq รองรับอย่างเป็นทางการอยู่ในปัจจุบัน
 const GROQ_TEXT_MODEL = "openai/gpt-oss-120b";
-const GROQ_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
+const GROQ_VISION_MODEL = "qwen/qwen3.6-27b";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 // ดาวน์โหลดไฟล์ภาพที่ลูกค้าส่งเข้ามาทาง LINE แล้วแปลงเป็น base64 เพื่อส่งให้โมเดล vision วิเคราะห์
