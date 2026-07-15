@@ -4,6 +4,7 @@
 // (ทำแบบ prefix-matching ล้วนๆ ไม่พึ่ง AI ตรงนี้ เพื่อความแน่นอนและประหยัด token)
 
 const sheety = require("./lib/sheety");
+const stockScanner = require("./lib/stockScanner");
 
 const OWNER_LINE_USER_ID = process.env.OWNER_LINE_USER_ID;
 
@@ -49,6 +50,7 @@ function buildLinksReply() {
     "  https://line-ai-agent-9m4s.onrender.com",
     "",
     "พิมพ์ 'ลิงก์' เมื่อไหร่ก็ได้เพื่อดูรายการนี้อีกครั้งค่ะ",
+    "พิมพ์ 'หุ้น' เพื่อดูหุ้นขาขึ้นเด่น SET100 ล่าสุดได้เลยค่ะ",
   ].join("\n");
 }
 
@@ -120,6 +122,23 @@ async function handleCommand(userId, text) {
       return { handled: false }; // ไม่ใช่เจ้าของ -> ปล่อยให้ไปคุยกับ Groq ตามปกติ ไม่บอกใบ้ว่ามีคำสั่งนี้อยู่
     }
     return { handled: true, reply: buildLinksReply() };
+  }
+
+  // ---------- หุ้น (สแกนหุ้น SET100 ขาขึ้น — เฉพาะเจ้าของบอทเท่านั้น) ----------
+  if (/^(หุ้น|สแกนหุ้น)/.test(trimmed)) {
+    if (!OWNER_LINE_USER_ID || userId !== OWNER_LINE_USER_ID) {
+      return { handled: false };
+    }
+    try {
+      const { stocks, asOf, total } = await stockScanner.fetchTopPicks(5);
+      return { handled: true, reply: stockScanner.formatSummary(stocks, asOf, total) };
+    } catch (e) {
+      console.error("ดึงข้อมูลหุ้นไม่สำเร็จ:", e);
+      return {
+        handled: true,
+        reply: "ดึงข้อมูลจากเว็บสแกนหุ้นไม่สำเร็จตอนนี้ค่ะ ลองใหม่อีกครั้ง หรือเข้าดูตรงเว็บได้ที่ " + stockScanner.SCANNER_URL,
+      };
+    }
   }
 
   // ---------- จดโน้ต ----------

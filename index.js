@@ -8,6 +8,7 @@ const line = require("@line/bot-sdk");
 const { buildSystemPrompt } = require("./systemPrompt");
 const { handleCommand, fmtDate } = require("./commands");
 const sheety = require("./lib/sheety");
+const stockScanner = require("./lib/stockScanner");
 
 const {
   LINE_CHANNEL_ACCESS_TOKEN,
@@ -317,6 +318,25 @@ app.get("/cron/daily", async (req, res) => {
   }
 
   res.json({ ok: true, sentCount: messages.length });
+});
+
+// เรียกได้ทั้งด้วยมือ (ตอนรีเฟรชเว็บสแกนหุ้นรายสัปดาห์) และตั้งให้ cron-job.org เรียกอัตโนมัติทุกสัปดาห์
+// ดึงข้อมูล Top 5 หุ้นล่าสุดจากเว็บสแกนหุ้น (rococo-sorbet-32afdf.netlify.app) แล้วส่งเข้า LINE เจ้าของร้านทันที
+// หมายเหตุ: endpoint นี้ "ไม่ได้" รีเฟรชข้อมูลหุ้นให้ใหม่เอง แค่ส่งสรุปของข้อมูลล่าสุดที่มีอยู่บนเว็บ ณ ตอนนั้น
+app.get("/cron/stock-summary", async (req, res) => {
+  if (!checkSecret(req, res)) return;
+  if (!OWNER_LINE_USER_ID) {
+    return res.status(200).send("ข้ามการทำงาน: ยังไม่ได้ตั้งค่า OWNER_LINE_USER_ID");
+  }
+  try {
+    const { stocks, asOf, total } = await stockScanner.fetchTopPicks(5);
+    const text = stockScanner.formatSummary(stocks, asOf, total);
+    await client.pushMessage(OWNER_LINE_USER_ID, { type: "text", text });
+    res.json({ ok: true, sent: stocks.length, asOf });
+  } catch (e) {
+    console.error("ส่งสรุปหุ้นเข้า LINE ไม่สำเร็จ:", e);
+    res.status(500).json({ ok: false, error: String(e) });
+  }
 });
 
 // Apple Shortcuts บนไอโฟนจะเรียก endpoint นี้เพื่อดึงโน้ตที่ยังไม่ถูกซิงก์เข้า Apple Notes
