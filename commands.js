@@ -7,6 +7,12 @@ const sheety = require("./lib/sheety");
 
 const OWNER_LINE_USER_ID = process.env.OWNER_LINE_USER_ID;
 
+// รหัสผ่านเว็บภายใน — ย้ายมาเก็บใน Environment Variable (Render) แทนการฝังเป็น plain text ในโค้ด
+// เพื่อไม่ให้รหัสผ่านจริงถูกบันทึกลง git history แบบเปิดเผย
+// ตั้งค่าที่ Render > Environment: SOLAR_DASHBOARD_PASSWORD, PM_DASHBOARD_PASSWORD
+const SOLAR_DASHBOARD_PASSWORD = process.env.SOLAR_DASHBOARD_PASSWORD || "(ยังไม่ได้ตั้งค่า ENV บน Render)";
+const PM_DASHBOARD_PASSWORD = process.env.PM_DASHBOARD_PASSWORD || "(ยังไม่ได้ตั้งค่า ENV บน Render)";
+
 // รายการลิงก์ที่ใช้งานอยู่ทั้งหมด — แก้ตรงนี้ที่เดียวเวลามีเว็บ/ระบบใหม่เพิ่มเข้ามา
 function buildLinksReply() {
   return [
@@ -27,10 +33,14 @@ function buildLinksReply() {
     "🔒 เว็บภายใน (ข้อมูลลับ มีรหัสผ่าน)",
     "• Solar PPA Control Dashboard",
     "  https://kriangsak-solar-ppa-dashboard.netlify.app",
-    "  รหัส: GYSolar2026!",
+    `  รหัส: ${SOLAR_DASHBOARD_PASSWORD}`,
     "• Project Control Dashboard (Construction)",
     "  https://kriangsak-pm-control.netlify.app",
-    "  รหัส: KriangsakPM2026!",
+    `  รหัส: ${PM_DASHBOARD_PASSWORD}`,
+    "",
+    "📈 เครื่องมือส่วนตัว",
+    "• Thai Stock Uptrend Scanner (SET100 รายสัปดาห์)",
+    "  https://rococo-sorbet-32afdf.netlify.app",
     "",
     "⚙️ ระบบเบื้องหลัง",
     "• Google Sheet ฐานข้อมูล",
