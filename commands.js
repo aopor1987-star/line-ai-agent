@@ -17,6 +17,8 @@ function buildLinksReply() {
     "  https://isad-studio-photography.netlify.app",
     "• ไกด์ถ่ายภาพท่องเที่ยว (ไทยรายฤดู + ทริปมีนาคม)",
     "  https://isad-studio-photography.netlify.app/travel-guide",
+    "• เลนส์ & อารมณ์ภาพ (Canon RF + Sigma Art)",
+    "  https://isad-studio-photography.netlify.app/lens-guide",
     "• เว็บ Story ส่วนตัว Mr. Kriangsak",
     "  https://mr-kriangsak-story.netlify.app",
     "• พอร์ตผลงาน Solar PPA (ไม่มีชื่อลูกค้า)",
