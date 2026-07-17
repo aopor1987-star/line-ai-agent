@@ -339,6 +339,26 @@ app.get("/cron/stock-summary", async (req, res) => {
   }
 });
 
+// Endpoint แจ้งเตือนทั่วไป — ใช้ส่งข้อความอะไรก็ได้เข้า LINE เจ้าของร้านทันที
+// เรียกแบบ: /cron/notify?key=CRON_SECRET&text=ข้อความที่ต้องการส่ง (ต้อง URL-encode ข้อความก่อน)
+app.get("/cron/notify", async (req, res) => {
+  if (!checkSecret(req, res)) return;
+  if (!OWNER_LINE_USER_ID) {
+    return res.status(200).send("ข้ามการทำงาน: ยังไม่ได้ตั้งค่า OWNER_LINE_USER_ID");
+  }
+  const text = req.query.text;
+  if (!text) {
+    return res.status(400).send("ต้องใส่ ?text=... ต่อท้าย URL ด้วย");
+  }
+  try {
+    await client.pushMessage(OWNER_LINE_USER_ID, { type: "text", text });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("ส่งข้อความแจ้งเตือนไม่สำเร็จ:", e);
+    res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
 // Apple Shortcuts บนไอโฟนจะเรียก endpoint นี้เพื่อดึงโน้ตที่ยังไม่ถูกซิงก์เข้า Apple Notes
 app.get("/notes/pending", async (req, res) => {
   if (!checkSecret(req, res)) return;
