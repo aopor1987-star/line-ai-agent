@@ -22,6 +22,8 @@ function buildLinksReply() {
     "🌐 เว็บสาธารณะ (แชร์ได้)",
     "• พอร์ตโฟลิโอช่างภาพ ISAD Studio",
     "  https://isad-studio-photography.netlify.app",
+    "• สไตล์การแต่งภาพ (Lightroom Preset)",
+    "  https://isad-studio-photography.netlify.app/#styles",
     "• ไกด์ถ่ายภาพท่องเที่ยว (ไทยรายฤดู + ทริปมีนาคม)",
     "  https://isad-studio-photography.netlify.app/travel-guide",
     "• เลนส์ & อารมณ์ภาพ (Canon RF + Sigma Art)",
