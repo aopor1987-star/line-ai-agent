@@ -13,6 +13,7 @@ const OWNER_LINE_USER_ID = process.env.OWNER_LINE_USER_ID;
 // ตั้งค่าที่ Render > Environment: SOLAR_DASHBOARD_PASSWORD, PM_DASHBOARD_PASSWORD
 const SOLAR_DASHBOARD_PASSWORD = process.env.SOLAR_DASHBOARD_PASSWORD || "(ยังไม่ได้ตั้งค่า ENV บน Render)";
 const PM_DASHBOARD_PASSWORD = process.env.PM_DASHBOARD_PASSWORD || "(ยังไม่ได้ตั้งค่า ENV บน Render)";
+const KIRATI_DASHBOARD_PASSWORD = process.env.KIRATI_DASHBOARD_PASSWORD || "Kirati2026@WdLzlE";
 
 // รายการลิงก์ที่ใช้งานอยู่ทั้งหมด — แก้ตรงนี้ที่เดียวเวลามีเว็บ/ระบบใหม่เพิ่มเข้ามา
 function buildLinksReply() {
@@ -40,6 +41,9 @@ function buildLinksReply() {
     "• Project Control Dashboard (Construction)",
     "  https://kriangsak-pm-control.netlify.app",
     `  รหัส: ${PM_DASHBOARD_PASSWORD}`,
+    "• Project Control Dashboard (Kirati — Construction & O&M Handover)",
+    "  https://kirati-pm-control.netlify.app",
+    `  รหัส: ${KIRATI_DASHBOARD_PASSWORD}`,
     "",
     "📈 เครื่องมือส่วนตัว",
     "• Thai Stock Uptrend Scanner (SET100 รายสัปดาห์)",
