@@ -389,6 +389,16 @@ app.post("/notes/mark-sent", express.json(), async (req, res) => {
   }
 });
 
+// Error handler กลาง — กันไม่ให้ error ที่ไม่คาดคิด (เช่น LINE signature validation ล้มเหลว)
+// หลุดออกมาเป็นหน้า "Internal Server Error" เปล่าๆ โดยไม่มี log ที่มีประโยชน์
+// ต้องอยู่หลัง route ทั้งหมดเสมอ (กติกาของ Express)
+app.use((err, req, res, next) => {
+  const status = err?.statusCode || err?.status || 500;
+  console.error(`[${req.method} ${req.path}] เกิดข้อผิดพลาด (${status}):`, err?.message || err);
+  if (res.headersSent) return next(err);
+  res.status(status).json({ ok: false, error: status === 401 ? "signature ไม่ถูกต้อง" : "เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์" });
+});
+
 const port = PORT || 3000;
 app.listen(port, () => {
   console.log(`Server พร้อมทำงานที่พอร์ต ${port}`);

@@ -122,19 +122,23 @@ function parseAmount(text) {
 async function handleCommand(userId, text) {
   const trimmed = (text || "").trim();
 
-  // ---------- ลิงก์ / dashboard (เฉพาะเจ้าของบอทเท่านั้น กันคนอื่นที่ทักเข้ามาเห็นรหัสผ่านเว็บลับ) ----------
+  // ---------- คำสั่งส่วนตัวของเจ้าของร้านทั้งหมด (ลิงก์/หุ้น/จด/เตือน/จ่าย-รับ/สรุป) ----------
+  // เช็คสิทธิ์เจ้าของครั้งเดียวตรงนี้ ก่อนจะไปจับ pattern คำสั่งด้านล่าง เพื่อกันปัญหา 2 อย่าง:
+  // 1) ลูกค้าทั่วไปพิมพ์คำที่บังเอิญขึ้นต้นเหมือนคำสั่ง (เช่น "รับทราบค่ะ", "จดหมาย...") แล้วบอทตอบผิดบริบทแทนที่จะคุยแบบปกติ
+  // 2) ข้อมูลลับ (รหัสผ่าน dashboard, สรุปรายรับ-รายจ่าย) หลุดไปให้คนอื่นที่ไม่ใช่เจ้าของเห็น
+  const isPersonalCommand = /^(ลิงก์|ลิ้งค์|ลิ้ง|link|dashboard|หุ้น|สแกนหุ้น|จด|โน้ต|บันทึกโน้ต|เตือน|จ่าย|รับ)/i.test(trimmed) ||
+    /^(สรุปเดือนนี้|สรุปการเงิน)/.test(trimmed);
+  if (isPersonalCommand && (!OWNER_LINE_USER_ID || userId !== OWNER_LINE_USER_ID)) {
+    return { handled: false }; // ไม่ใช่เจ้าของ -> ปล่อยให้ไปคุยกับ Groq ตามปกติ ไม่บอกใบ้ว่ามีคำสั่งนี้อยู่
+  }
+
+  // ---------- ลิงก์ / dashboard ----------
   if (/^(ลิงก์|ลิ้งค์|ลิ้ง|link|dashboard)/i.test(trimmed)) {
-    if (!OWNER_LINE_USER_ID || userId !== OWNER_LINE_USER_ID) {
-      return { handled: false }; // ไม่ใช่เจ้าของ -> ปล่อยให้ไปคุยกับ Groq ตามปกติ ไม่บอกใบ้ว่ามีคำสั่งนี้อยู่
-    }
     return { handled: true, reply: buildLinksReply() };
   }
 
-  // ---------- หุ้น (สแกนหุ้น SET100 ขาขึ้น — เฉพาะเจ้าของบอทเท่านั้น) ----------
+  // ---------- หุ้น (สแกนหุ้น SET100 ขาขึ้น) ----------
   if (/^(หุ้น|สแกนหุ้น)/.test(trimmed)) {
-    if (!OWNER_LINE_USER_ID || userId !== OWNER_LINE_USER_ID) {
-      return { handled: false };
-    }
     try {
       const { stocks, asOf, total } = await stockScanner.fetchTopPicks(5);
       return { handled: true, reply: stockScanner.formatSummary(stocks, asOf, total) };
@@ -216,7 +220,7 @@ async function handleCommand(userId, text) {
   }
 
   // ---------- สรุปรายเดือน ----------
-  if (/สรุปเดือนนี้|สรุปการเงิน/.test(trimmed)) {
+  if (/^(สรุปเดือนนี้|สรุปการเงิน)/.test(trimmed)) {
     const rows = await sheety.getRows("financelogs");
     const thisMonth = fmtDate(new Date()).slice(0, 7);
     const monthRows = rows.filter((r) => (r.date || "").startsWith(thisMonth));
